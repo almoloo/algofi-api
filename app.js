@@ -10,6 +10,12 @@ app.use(express.urlencoded({ extended: false }));
 
 app.use('/api', apiRouter);
 
+
+// sample root
+app.get('/', (req, res) => {
+  res.json({ message: 'Welcome to the API' });
+});
+
 // error handler
 app.use(function(err, req, res, next) {
   // set locals, only providing error in development
