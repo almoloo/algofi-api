@@ -106,18 +106,20 @@ router.get("/getactiveorderedsymbols", async (req, res, next) => {
 });
 
 // ---------- GET ACCOUNTS FROM APPID ----------
-router.get("/getaccountsfromappid", async (req, res, next) => {
-  const appid = req.query["appid"];
-  const onlyAddress = req.query["onlyAddress"] === "true";
-  const appidUrl = `https://algoindexer.algoexplorerapi.io/v2/accounts?application-id=${appid}`;
+const getaccountsfromappid = async (appId, onlyAddress) => {
+  const appidUrl = `https://algoindexer.algoexplorerapi.io/v2/accounts?application-id=${appId}`;
   const response = await fetch(appidUrl);
   const json = await response.json();
   if (onlyAddress) {
-    const accounts = json.accounts.map(account => account.address);
-    res.json(accounts);
+    return json.accounts.map(account => account.address);
   } else {
-    res.json(json.accounts);
+    return json.accounts;
   }
+}
+router.get("/getaccountsfromappid", async (req, res, next) => {
+  const appid = req.query["appid"];
+  const onlyAddress = req.query["onlyAddress"] === "true";
+  res.json(await getaccountsfromappid(appid, onlyAddress));
 });
 
 // ---------- GET MARKET APPID FROM SYMBOL ----------
@@ -131,15 +133,14 @@ router.get("/getmarketappid", async (req, res, next) => {
 });
 
 // ---------- GET STORAGE STATE ----------
+const getstoragestate = async (appId, address) => {
+  const newManager = await algofi.Manager.init(algodClient, appId);
+  return newManager.getStorageState(address);
+}
 router.get("/getstoragestate", async (req, res, next) => {
   const appId = parseInt(req.query["appid"]);
   const address = req.query["address"];
-  const newManager = await algofi.Manager.init(algodClient, appId);
-  try {
-    res.json(await newManager.getStorageState(address));
-  } catch (e) {
-    res.json({ error: e });
-  }
+  res.json(await getstoragestate(appId, address));
 });
 
 // ---------- GET USERS WITH VALUE FROM SYMBOL ----------
@@ -148,30 +149,24 @@ router.get("/getstorages", async (req, res, next) => {
   const client = await clientPromise();
   if (client.markets[symbol] === undefined) res.json({});
   const appid = client.markets[symbol].asset.underlyingAssetInfo.managerAppId;
-  const accounts = await fetch(
-    `http://localhost:3000/api/getaccountsfromappid?appid=${appid}&onlyAddress=true`
-  );
-  const accountsJson = await accounts.json();
+  const accounts = await getaccountsfromappid(appid, true);
   let storages = [];
   let validStorages = [];
-  if (accountsJson.length > 0) {
-    accountsJson.forEach(async account => {
-      const storageState = await fetch(
-        `http://localhost:3000/api/getstoragestate?appid=${appid}&address=${account}`
-      );
-      const storageJson = await storageState.json();
+  if (accounts.length > 0) {
+    accounts.forEach(async account => {
+      const storageState = await getstoragestate(appid, account);
       const tempStorage = {
         address: account,
-        storageState: storageJson
+        storageState: storageState
       };
       storages.push(tempStorage);
       if (
-        storageJson["user_global_max_borrow_in_dollars"] > 0 ||
-        storageJson["user_global_borrowed_in_dollars"] > 0
+        storageState["user_global_max_borrow_in_dollars"] > 0 ||
+        storageState["user_global_borrowed_in_dollars"] > 0
       ) {
         validStorages.push(tempStorage);
       }
-      if (storages.length === accountsJson.length) {
+      if (storages.length === accounts.length) {
         res.json(validStorages);
       }
     });
